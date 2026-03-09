@@ -58,3 +58,11 @@ python3 apps/python/usb_gpu_pipeline.py --modify
 - Each plugin reads `../../VERSION` for its own version number.
 - ABI breaks in Limef require a SONAME bump; plugins will then refuse to load with
   a clear linker error rather than a silent memory fault.
+
+## Copyright
+
+(c) 2026 Sampsa Riikonen
+
+## License
+
+MIT
