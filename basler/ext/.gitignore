@@ -1,0 +1,4 @@
+# Basler Pylon SDK — downloaded by download.bash, not tracked in git
+pylon/
+*.tar.gz
+*.run
