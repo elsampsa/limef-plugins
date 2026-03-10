@@ -22,16 +22,29 @@
 cmake_minimum_required(VERSION 3.18)
 project(LimefOpenCV)
 
+# ── Locate Limef ──────────────────────────────────────────────────────────────
+# Declared first so the VERSION fallback path below can reference LIMEF_PREFIX.
+
+set(LIMEF_PREFIX "$ENV{HOME}/limef-stage" CACHE PATH "Limef install prefix")
+
 # ── Version ───────────────────────────────────────────────────────────────────
 
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION" VERSION_STRING)
+# Find the VERSION file: try in-tree first (plugins/opencv/../../VERSION),
+# then fall back to the installed copy from the .deb (include/limef/VERSION).
+# This makes out-of-tree builds (e.g. /tmp) work against an installed .deb.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION")
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION" VERSION_STRING)
+elseif(EXISTS "${LIMEF_PREFIX}/include/limef/VERSION")
+    file(READ "${LIMEF_PREFIX}/include/limef/VERSION" VERSION_STRING)
+else()
+    set(VERSION_STRING "0.0.0")
+    message(WARNING "Could not find Limef VERSION file — using ${VERSION_STRING}")
+endif()
 string(STRIP "${VERSION_STRING}" VERSION_STRING)
 string(REPLACE "." ";" _ver_list ${VERSION_STRING})
 list(GET _ver_list 0 MAJOR_VERSION)
 
-# ── Locate Limef ──────────────────────────────────────────────────────────────
-
-set(LIMEF_PREFIX "$ENV{HOME}/limef-stage" CACHE PATH "Limef install prefix")
+# ── (continued) Locate Limef ──────────────────────────────────────────────────
 set(LIMEF_INCLUDE_DIR "${LIMEF_PREFIX}/include")
 set(LIMEF_SYSINCLUDE_DIR "${LIMEF_PREFIX}/include/limef")
 set(LIMEF_FFMPEG_DIR  "${LIMEF_PREFIX}/include/limef/ffmpeg")
@@ -229,3 +242,19 @@ install(DIRECTORY src/
 # file(GLOB OPENCV_SHARED_LIBS "${OPENCV_LIB_DIR}/libopencv_*.so*")
 # install(FILES ${OPENCV_SHARED_LIBS}
 #         DESTINATION lib/limef/opencv)
+
+# ── CPack / .deb packaging ────────────────────────────────────────────────────
+
+exec_program(dpkg ARGS --print-architecture OUTPUT_VARIABLE MY_ARCH)
+
+set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_NAME "LimefOpenCV")
+set(CPACK_PACKAGE_VERSION         "${VERSION_STRING}")
+set(CPACK_PACKAGE_VERSION_MAJOR   "${MAJOR_VERSION}")
+set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${MY_ARCH}")
+set(CPACK_PACKAGE_CONTACT         "sampsa.riikonen@iki.fi")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Limef OpenCV CUDA plugin")
+# The plugin requires the matching Limef base package at runtime.
+set(CPACK_DEBIAN_PACKAGE_DEPENDS  "limef (= ${VERSION_STRING})")
+
+include(CPack)

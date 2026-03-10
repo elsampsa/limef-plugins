@@ -52,9 +52,10 @@ exec_program(pkg-config ARGS --libs x11 glew OUTPUT_VARIABLE GLEW_LIBRARIES)
 # ── Common settings ───────────────────────────────────────────────────────────
 
 set(COMMON_INCLUDES
-    ${LIMEF_INCLUDE_DIR}        # for "limef/xxx.h" and "limef/opencv/xxx.h"
-    ${LIMEF_SYSINCLUDE_DIR}     # for <spdlog/...>, <flatbuffers/...>, <uws/...>
-    ${LIMEF_FFMPEG_DIR}         # for <libavcodec/avcodec.h> etc.
+    ${LIMEF_INCLUDE_DIR}                        # for "limef/xxx.h"
+    "${LIMEF_OPENCV_PREFIX}/include"            # for "limef/opencv/xxx.h" (plugin headers)
+    ${LIMEF_SYSINCLUDE_DIR}                     # for <spdlog/...>, <flatbuffers/...>, <uws/...>
+    ${LIMEF_FFMPEG_DIR}                         # for <libavcodec/avcodec.h> etc.
     ${OPENCV_INCLUDE_DIR}
     ${CUDAToolkit_INCLUDE_DIRS}
 )
@@ -67,7 +68,21 @@ set(COMMON_LIBS
     ${ZLIB_LIBRARIES}
     pthread
     "-L${LIMEF_PREFIX}/lib"         Limef.so
+    # --no-as-needed / --as-needed bracket around LimefOpenCV.so:
+    #
+    # Ubuntu's linker uses --as-needed by default, which drops a library from
+    # the ELF NEEDED list when every symbol it provides is inlined from headers
+    # at compile time.  GPUOpenCVThread is a header-only class, so the linker
+    # sees no undefined symbols that require LimefOpenCV.so and silently omits
+    # it.  At runtime the library is still needed (vtables, static initialisers,
+    # etc.), so loading the app fails with "cannot open shared object file".
+    #
+    # --no-as-needed forces the entry into NEEDED regardless of whether any
+    # symbol references are visible to the linker.  We restore --as-needed
+    # immediately after so the rest of the link is unaffected.
+    "-Wl,--no-as-needed"
     "-L${LIMEF_OPENCV_PREFIX}/lib"  LimefOpenCV.so
+    "-Wl,--as-needed"
     "-L${OPENCV_LIB_DIR}"
     opencv_core opencv_cudaarithm opencv_cudafilters opencv_cudev opencv_imgproc
     CUDA::cudart
