@@ -30,12 +30,15 @@ set(LIMEF_PREFIX "$ENV{HOME}/limef-stage" CACHE PATH "Limef install prefix")
 # ── Version ───────────────────────────────────────────────────────────────────
 
 # Find the VERSION file: try in-tree first (plugins/opencv/../../VERSION),
-# then fall back to the installed copy from the .deb (include/limef/VERSION).
-# This makes out-of-tree builds (e.g. /tmp) work against an installed .deb.
+# then the configured prefix, then the two standard system prefixes.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION")
     file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION" VERSION_STRING)
 elseif(EXISTS "${LIMEF_PREFIX}/include/limef/VERSION")
     file(READ "${LIMEF_PREFIX}/include/limef/VERSION" VERSION_STRING)
+elseif(EXISTS "/usr/include/limef/VERSION")
+    file(READ "/usr/include/limef/VERSION" VERSION_STRING)
+elseif(EXISTS "/usr/local/include/limef/VERSION")
+    file(READ "/usr/local/include/limef/VERSION" VERSION_STRING)
 else()
     set(VERSION_STRING "0.0.0")
     message(WARNING "Could not find Limef VERSION file — using ${VERSION_STRING}")
@@ -57,8 +60,17 @@ endif()
 
 # ── Locate OpenCV ─────────────────────────────────────────────────────────────
 
-set(OPENCV_INSTALL "${CMAKE_CURRENT_SOURCE_DIR}/../../apps/ext/opencv/install"
-    CACHE PATH "OpenCV install prefix (must be built with CUDA support)")
+set(OPENCV_INSTALL "" CACHE PATH "OpenCV install prefix (must be built with CUDA support)")
+
+# Prefer dev-tree build, fall back to system install (/usr/local from deb)
+if(NOT OPENCV_INSTALL)
+    set(_DEV_OPENCV "${CMAKE_CURRENT_SOURCE_DIR}/../../apps/ext/opencv/install")
+    if(EXISTS "${_DEV_OPENCV}/include/opencv4/opencv2/core.hpp")
+        set(OPENCV_INSTALL "${_DEV_OPENCV}")
+    else()
+        set(OPENCV_INSTALL "/usr/local")
+    endif()
+endif()
 
 set(OPENCV_INCLUDE_DIR "${OPENCV_INSTALL}/include/opencv4")
 set(OPENCV_LIB_DIR     "${OPENCV_INSTALL}/lib")
@@ -66,8 +78,7 @@ set(OPENCV_LIB_DIR     "${OPENCV_INSTALL}/lib")
 if(NOT EXISTS "${OPENCV_INCLUDE_DIR}/opencv2/core.hpp")
     message(FATAL_ERROR
         "OpenCV headers not found at ${OPENCV_INCLUDE_DIR}\n"
-        "Build OpenCV with CUDA support first (see apps/ext/build_ext.bash),\n"
-        "or set -DOPENCV_INSTALL=<path>.")
+        "Install limef-opencv-cuda.deb or set -DOPENCV_INSTALL=<path>.")
 endif()
 
 # ── CUDA ──────────────────────────────────────────────────────────────────────
@@ -255,6 +266,6 @@ set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${MY_ARCH}")
 set(CPACK_PACKAGE_CONTACT         "sampsa.riikonen@iki.fi")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Limef OpenCV CUDA plugin")
 # The plugin requires the matching Limef base package at runtime.
-set(CPACK_DEBIAN_PACKAGE_DEPENDS  "limef (= ${VERSION_STRING})")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS  "limef-cuda (= ${VERSION_STRING})")
 
 include(CPack)

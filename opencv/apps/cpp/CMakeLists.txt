@@ -34,8 +34,17 @@ set(LIMEF_OPENCV_PREFIX "${LIMEF_PREFIX}" CACHE PATH
 
 # ── Locate OpenCV ─────────────────────────────────────────────────────────────
 
-set(OPENCV_INSTALL "${CMAKE_CURRENT_SOURCE_DIR}/../../../../apps/ext/opencv/install"
-    CACHE PATH "OpenCV install prefix")
+set(OPENCV_INSTALL "" CACHE PATH "OpenCV install prefix")
+
+# Prefer dev-tree build, fall back to system install (/usr/local from deb)
+if(NOT OPENCV_INSTALL)
+    set(_DEV_OPENCV "${CMAKE_CURRENT_SOURCE_DIR}/../../../../apps/ext/opencv/install")
+    if(EXISTS "${_DEV_OPENCV}/include/opencv4/opencv2/core.hpp")
+        set(OPENCV_INSTALL "${_DEV_OPENCV}")
+    else()
+        set(OPENCV_INSTALL "/usr/local")
+    endif()
+endif()
 set(OPENCV_INCLUDE_DIR "${OPENCV_INSTALL}/include/opencv4")
 set(OPENCV_LIB_DIR     "${OPENCV_INSTALL}/lib")
 
