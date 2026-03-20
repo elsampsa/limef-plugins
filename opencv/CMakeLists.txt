@@ -25,7 +25,17 @@ project(LimefOpenCV)
 # ── Locate Limef ──────────────────────────────────────────────────────────────
 # Declared first so the VERSION fallback path below can reference LIMEF_PREFIX.
 
-set(LIMEF_PREFIX "$ENV{HOME}/limef-stage" CACHE PATH "Limef install prefix")
+# Auto-detect default: prefer dev staging tree, fall back to deb install at /usr.
+# Override with -DLIMEF_PREFIX=<path> if needed.
+if(EXISTS "$ENV{HOME}/limef-stage/include/limef/thread/thread.h")
+    set(_limef_prefix_default "$ENV{HOME}/limef-stage")
+elseif(EXISTS "/usr/include/limef/thread/thread.h")
+    set(_limef_prefix_default "/usr")
+else()
+    set(_limef_prefix_default "$ENV{HOME}/limef-stage")
+endif()
+set(LIMEF_PREFIX "${_limef_prefix_default}" CACHE PATH "Limef install prefix")
+message(STATUS "LIMEF_PREFIX: ${LIMEF_PREFIX}")
 
 # ── Version ───────────────────────────────────────────────────────────────────
 

@@ -22,7 +22,15 @@ add_compile_options("-std=c++20")
 
 # ── Locate Limef ──────────────────────────────────────────────────────────────
 
-set(LIMEF_PREFIX "$ENV{HOME}/limef-stage" CACHE PATH "Limef install prefix")
+if(EXISTS "$ENV{HOME}/limef-stage/include/limef/thread/thread.h")
+    set(_limef_prefix_default "$ENV{HOME}/limef-stage")
+elseif(EXISTS "/usr/include/limef/thread/thread.h")
+    set(_limef_prefix_default "/usr")
+else()
+    set(_limef_prefix_default "$ENV{HOME}/limef-stage")
+endif()
+set(LIMEF_PREFIX "${_limef_prefix_default}" CACHE PATH "Limef install prefix")
+message(STATUS "LIMEF_PREFIX: ${LIMEF_PREFIX}")
 set(LIMEF_INCLUDE_DIR    "${LIMEF_PREFIX}/include")
 set(LIMEF_SYSINCLUDE_DIR "${LIMEF_PREFIX}/include/limef")
 set(LIMEF_FFMPEG_DIR     "${LIMEF_PREFIX}/include/limef/ffmpeg")
