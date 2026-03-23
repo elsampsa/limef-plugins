@@ -49,8 +49,15 @@ fi
 # Plugin headers: src/ → include/limef/basler/
 ln -sfn "$PLUGIN_ROOT/src"                    "$STAGING/include/limef/basler"
 
-# Plugin library
-ln -sfn "$BUILD_PATH/lib/libLimefBasler.so"   "$STAGING/lib/libLimefBasler.so"
+# Library: all versioned names (libLimefBasler.so, .so.0, .so.0.0.1)
+for f in "$BUILD_PATH/lib/"libLimefBasler.so*; do
+    [ -e "$f" ] && ln -sfn "$f" "$STAGING/lib/$(basename "$f")"
+done
+
+# Python module (limef_basler.cpython-*.so)
+for f in "$BUILD_PATH/lib/"limef_basler.cpython-*.so; do
+    [ -f "$f" ] && ln -sfn "$f" "$STAGING/lib/$(basename "$f")"
+done
 
 echo "LimefBasler plugin staged at $STAGING  (build: $BUILD_DIR)"
 echo "  Headers: $STAGING/include/limef/basler → $PLUGIN_ROOT/src"

@@ -279,3 +279,37 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Limef OpenCV CUDA plugin")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS  "limef-cuda (= ${VERSION_STRING})")
 
 include(CPack)
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+
+option(build_tests "Build test binaries" ON)
+
+if(build_tests)
+    add_executable(opencv_test test/opencv_test.cpp)
+    target_compile_definitions(opencv_test PRIVATE LIMEF_CUDA)
+    target_include_directories(opencv_test PRIVATE
+        src
+        ${LIMEF_INCLUDE_DIR}
+        ${LIMEF_SYSINCLUDE_DIR}
+        ${LIMEF_FFMPEG_DIR}
+        ${OPENCV_INCLUDE_DIR}
+        ${CUDAToolkit_INCLUDE_DIRS}
+    )
+    target_link_libraries(opencv_test PRIVATE
+        "-L${LIMEF_PREFIX}/lib" -lLimef
+        LimefOpenCV
+        "-L${OPENCV_LIB_DIR}"
+        opencv_core
+        opencv_cudaarithm
+        opencv_cudafilters
+        opencv_cudev
+        CUDA::cudart
+        pthread
+    )
+    set_target_properties(opencv_test PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    message(STATUS "Building test binaries (opencv_test)")
+else()
+    message(STATUS "Skipping test binaries (-Dbuild_tests=OFF)")
+endif()

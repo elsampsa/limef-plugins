@@ -194,3 +194,29 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Limef Basler camera plugin")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS  "limef-cuda (= ${VERSION_STRING})")
 
 include(CPack)
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+
+option(build_tests "Build test binaries" ON)
+
+if(build_tests)
+    add_executable(basler_test test/basler_test.cpp)
+    target_include_directories(basler_test PRIVATE
+        src
+        ${LIMEF_INCLUDE_DIR}
+        ${LIMEF_SYSINCLUDE_DIR}
+        ${LIMEF_FFMPEG_DIR}
+    )
+    target_link_libraries(basler_test PRIVATE
+        "-L${LIMEF_PREFIX}/lib" -lLimef
+        LimefBasler
+        pylon::pylon
+        pthread
+    )
+    set_target_properties(basler_test PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    )
+    message(STATUS "Building test binaries (basler_test)")
+else()
+    message(STATUS "Skipping test binaries (-Dbuild_tests=OFF)")
+endif()

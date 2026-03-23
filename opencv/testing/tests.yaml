@@ -1,0 +1,35 @@
+
+env:
+  LD_LIBRARY_PATH: ${lib_dir}
+
+groups:
+  static:
+    opencv_test:
+      1:
+        valgrind: false
+        fixtures: false
+        verbosity: 4
+        about: "toMat / channelMat: CPU zero-copy wrappers"
+        expect_stdout:
+          - "toMat: ok"
+          - "channelMat: ok"
+
+  cuda:
+    opencv_test:
+      2:
+        valgrind: false
+        fixtures: false
+        verbosity: 2
+        timeout: 30
+        about: "toGpuMat / channelGpuMat: GPU zero-copy wrappers"
+        expect_stdout:
+          - "toGpuMat: ok"
+          - "channelGpuMat: ok"
+      3:
+        valgrind: false
+        fixtures: false
+        verbosity: 2
+        timeout: 30
+        about: "GPUOpenCVThread: process 5 GPU TensorFrames through Gaussian blur"
+        expect_stdout:
+          - "tensor frames out: 5"

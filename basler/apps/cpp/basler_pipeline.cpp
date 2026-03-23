@@ -43,8 +43,11 @@
 #include <thread>
 #include <getopt.h>
 
-#include "limef/framefilter/dump.h"
+// basler_camera_thread.h must come before any limef header that pulls in
+// GL/glx.h → X11/Xlib.h, because X11 #defines None=0 which clashes with
+// GenApi::EStandardNameSpace::None in the Pylon headers.
 #include "limef/basler/basler_camera_thread.h"
+#include "limef/framefilter/dump.h"
 
 static std::atomic<bool> g_running{true};
 

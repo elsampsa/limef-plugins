@@ -1,0 +1,51 @@
+
+env:
+  LD_LIBRARY_PATH: ${lib_dir}:/opt/pylon/lib
+
+groups:
+  static:
+    basler_test:
+      1:
+        valgrind: false
+        fixtures: false
+        verbosity: 4
+        about: "pylonFormatToFFmpeg static format mapping"
+        expect_stdout:
+          - "YUYV422: ok"
+          - "GRAY8: ok"
+          - "BGR24: ok"
+          - "RGB24: ok"
+          - "AV_PIX_FMT_NONE: ok"
+
+  emulator:
+    basler_test:
+      2:
+        valgrind: false
+        fixtures: false
+        verbosity: 2
+        timeout: 30
+        about: "BaslerCameraThread emulator: grab 5 color DecodedFrames (NV12)"
+        env:
+          PYLON_CAMEMU: "1"
+        expect_stdout:
+          - "decoded frames: 5"
+      3:
+        valgrind: false
+        fixtures: false
+        verbosity: 2
+        timeout: 30
+        about: "BaslerCameraThread emulator: grab 5 mono DecodedFrames (GRAY8)"
+        env:
+          PYLON_CAMEMU: "1"
+        expect_stdout:
+          - "decoded frames: 5"
+      4:
+        valgrind: false
+        fixtures: false
+        verbosity: 2
+        timeout: 30
+        about: "BaslerMultispectralThread emulator: grab 2 TensorFrame cubes (3 bands)"
+        env:
+          PYLON_CAMEMU: "1"
+        expect_stdout:
+          - "tensor frames: 2"

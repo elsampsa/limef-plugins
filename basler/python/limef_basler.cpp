@@ -90,7 +90,10 @@ PYBIND11_MODULE(limef_basler, m) {
         .def_readwrite("height",        &BaslerCameraContext::height)
         .def_readwrite("fps",           &BaslerCameraContext::fps)
         .def_readwrite("mode",          &BaslerCameraContext::mode)
-        .def_readwrite("output_format", &BaslerCameraContext::output_format);
+        .def_property("output_format",
+            [](const BaslerCameraContext& c) { return static_cast<int>(c.output_format); },
+            [](BaslerCameraContext& c, int v) { c.output_format = static_cast<AVPixelFormat>(v); },
+            "AVPixelFormat after SwScale conversion (use limef.AV_PIX_FMT_* constants).");
 
     // ── BaslerCameraThread ────────────────────────────────────────────────────
 

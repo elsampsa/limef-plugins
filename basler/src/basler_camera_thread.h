@@ -42,13 +42,17 @@
  *   export PYLON_CAMEMU=1   # Pylon presents one virtual colour camera
  */
 
+// Pylon must come before any X11 headers.
+// common.h pulls in GL/glx.h → X11/Xlib.h which #defines None=0, which
+// clashes with GenApi::EStandardNameSpace::None.  Including Pylon first
+// lets Pylon define its own None before X11 can stomp on it.
+#include <pylon/PylonIncludes.h>
+
 #include "limef/thread/producer.h"
 #include "limef/frame/decodedframe.h"
 #include "limef/frame/streamframe.h"
 #include "limef/frame/tensorframe.h"
 #include "limef/framefilter/swscale.h"
-
-#include <pylon/PylonIncludes.h>
 
 #include <chrono>
 #include <cstring>
@@ -65,14 +69,34 @@ namespace Limef::basler {
 /**
  * @brief RAII wrapper around a single Pylon CInstantCamera.
  *
- * Handles open / configure / StartGrabbing / StopGrabbing / close.
- * Both BaslerCameraThread and BaslerMultispectralThread hold one as a member.
- * PylonInitialize / PylonTerminate are the caller's responsibility.
+ * Owns the full Pylon lifecycle: PylonInitialize() on open(), PylonTerminate()
+ * in the destructor after CInstantCamera is fully destroyed.
+ *
+ * ## Why a pointer for CInstantCamera?
+ *
+ * PylonTerminate() must be called *after* every CInstantCamera object is
+ * destroyed.  If CInstantCamera were a plain member it would be destroyed by
+ * the compiler *after* our destructor body runs — i.e. after PylonTerminate()
+ * — which causes a segfault inside the Pylon transport-layer cleanup.
+ * Holding it as a raw pointer lets us explicitly delete it in the destructor
+ * body, before calling PylonTerminate().
  */
 struct BaslerCamera {
 
+    ~BaslerCamera() {
+        close();
+        delete camera_;
+        camera_ = nullptr;
+        if (pylon_initialized_) {
+            Pylon::PylonTerminate();
+        }
+    }
+
     /**
      * @brief Open and configure the camera.
+     *
+     * Calls PylonInitialize() internally; PylonTerminate() is called in the
+     * destructor after CInstantCamera is destroyed.
      *
      * @param serial        Serial number string; "" = first available camera.
      * @param width         Requested width  (0 = keep camera default).
@@ -80,7 +104,7 @@ struct BaslerCamera {
      * @param fps           Requested acquisition frame rate.
      * @param pylon_format  GenICam PixelFormat value, e.g. "Mono8".
      * @param log           Logger to use for messages.
-     * @return true on success; actual width / height readable afterwards.
+     * @return true on success; actual width / height / format readable afterwards.
      */
     bool open(const std::string& serial,
               int width, int height, double fps,
@@ -88,16 +112,21 @@ struct BaslerCamera {
               std::shared_ptr<spdlog::logger> log)
     {
         logger_ = log;
+
+        Pylon::PylonInitialize();
+        pylon_initialized_ = true;
+        camera_ = new Pylon::CInstantCamera();
+
         Pylon::CTlFactory& tl = Pylon::CTlFactory::GetInstance();
         try {
             if (serial.empty()) {
-                camera_.Attach(tl.CreateFirstDevice());
+                camera_->Attach(tl.CreateFirstDevice());
             } else {
                 Pylon::CDeviceInfo info;
                 info.SetSerialNumber(serial.c_str());
-                camera_.Attach(tl.CreateDevice(info));
+                camera_->Attach(tl.CreateDevice(info));
             }
-            camera_.Open();
+            camera_->Open();
         } catch (const Pylon::GenericException& e) {
             logger_->error("BaslerCamera: cannot open camera: {}", e.what());
             return false;
@@ -110,43 +139,52 @@ struct BaslerCamera {
 
         // Enable frame-rate control (may not be available on all models)
         try {
-            Pylon::CBooleanParameter(camera_.GetNodeMap(),
+            Pylon::CBooleanParameter(camera_->GetNodeMap(),
                                      "AcquisitionFrameRateEnable").SetValue(true);
-            Pylon::CFloatParameter(camera_.GetNodeMap(),
+            Pylon::CFloatParameter(camera_->GetNodeMap(),
                                    "AcquisitionFrameRate").SetValue(fps);
         } catch (const Pylon::GenericException& e) {
             logger_->warn("BaslerCamera: cannot set frame rate: {}", e.what());
         }
 
-        // Read back actual dimensions
+        // Read back actual dimensions and pixel format (may differ from requested)
         try {
             actual_width_  = static_cast<int>(
-                Pylon::CIntegerParameter(camera_.GetNodeMap(), "Width").GetValue());
+                Pylon::CIntegerParameter(camera_->GetNodeMap(), "Width").GetValue());
             actual_height_ = static_cast<int>(
-                Pylon::CIntegerParameter(camera_.GetNodeMap(), "Height").GetValue());
+                Pylon::CIntegerParameter(camera_->GetNodeMap(), "Height").GetValue());
+            actual_pylon_format_ = std::string(
+                Pylon::CEnumParameter(camera_->GetNodeMap(), "PixelFormat").GetValue());
         } catch (const Pylon::GenericException& e) {
-            logger_->error("BaslerCamera: cannot read dimensions: {}", e.what());
-            camera_.Close();
+            logger_->error("BaslerCamera: cannot read camera properties: {}", e.what());
+            camera_->Close();
             return false;
         }
 
+        if (actual_pylon_format_ != pylon_format) {
+            logger_->warn("BaslerCamera: requested format {} not available, "
+                          "camera is using {}", pylon_format, actual_pylon_format_);
+        }
+
         logger_->info("BaslerCamera: opened {}x{} @ {:.1f} fps format={}",
-                      actual_width_, actual_height_, fps, pylon_format);
-        camera_.StartGrabbing();
+                      actual_width_, actual_height_, fps, actual_pylon_format_);
+        camera_->StartGrabbing();
         return true;
     }
 
     void close() {
-        if (camera_.IsGrabbing()) camera_.StopGrabbing();
-        if (camera_.IsOpen())     camera_.Close();
+        if (!camera_) return;
+        if (camera_->IsGrabbing()) camera_->StopGrabbing();
+        if (camera_->IsOpen())     camera_->Close();
     }
 
-    bool isOpen() const { return camera_.IsOpen(); }
+    bool isOpen() const { return camera_ && camera_->IsOpen(); }
 
     /** @brief Retrieve one grab result (blocks up to timeout_ms). */
     bool retrieve(Pylon::CGrabResultPtr& result, int timeout_ms = 5000) {
+        if (!camera_) return false;
         try {
-            return camera_.RetrieveResult(
+            return camera_->RetrieveResult(
                 timeout_ms, result, Pylon::TimeoutHandling_Return);
         } catch (const Pylon::GenericException& e) {
             if (logger_) logger_->error("BaslerCamera: RetrieveResult: {}", e.what());
@@ -156,8 +194,9 @@ struct BaslerCamera {
 
     /** @brief Set an integer GenICam node (silently warns on failure). */
     void setInt(const std::string& name, int64_t value) {
+        if (!camera_) return;
         try {
-            Pylon::CIntegerParameter(camera_.GetNodeMap(), name.c_str())
+            Pylon::CIntegerParameter(camera_->GetNodeMap(), name.c_str())
                 .SetValue(value);
         } catch (const Pylon::GenericException& e) {
             if (logger_) logger_->warn("BaslerCamera: cannot set {} = {}: {}",
@@ -167,8 +206,9 @@ struct BaslerCamera {
 
     /** @brief Set an enum GenICam node (silently warns on failure). */
     void setEnum(const std::string& name, const std::string& value) {
+        if (!camera_) return;
         try {
-            Pylon::CEnumParameter(camera_.GetNodeMap(), name.c_str())
+            Pylon::CEnumParameter(camera_->GetNodeMap(), name.c_str())
                 .SetValue(value.c_str());
         } catch (const Pylon::GenericException& e) {
             if (logger_) logger_->warn("BaslerCamera: cannot set {} = {}: {}",
@@ -176,13 +216,25 @@ struct BaslerCamera {
         }
     }
 
-    int actualWidth()  const { return actual_width_;  }
-    int actualHeight() const { return actual_height_; }
+    int         actualWidth()        const { return actual_width_;        }
+    int         actualHeight()       const { return actual_height_;       }
+    std::string actualPylonFormat()  const { return actual_pylon_format_; }
+
+    /** Map a Pylon PixelFormat string to the matching AVPixelFormat. */
+    static AVPixelFormat pylonFormatToFFmpeg(const std::string& pylon_fmt) {
+        if (pylon_fmt == "YUV422_YUYV_Packed") return AV_PIX_FMT_YUYV422;
+        if (pylon_fmt == "Mono8")              return AV_PIX_FMT_GRAY8;
+        if (pylon_fmt == "BGR8")               return AV_PIX_FMT_BGR24;
+        if (pylon_fmt == "RGB8")               return AV_PIX_FMT_RGB24;
+        return AV_PIX_FMT_NONE;
+    }
 
 private:
-    Pylon::CInstantCamera camera_;
-    int actual_width_{0};
-    int actual_height_{0};
+    Pylon::CInstantCamera* camera_{nullptr};
+    bool        pylon_initialized_{false};
+    int         actual_width_{0};
+    int         actual_height_{0};
+    std::string actual_pylon_format_;
     std::shared_ptr<spdlog::logger> logger_;
 };
 
@@ -243,19 +295,9 @@ public:
         , swscale_("basler_swscale", ctx.output_format)
     {}
 
-    ~BaslerCameraThread() override {
-        camera_.close();
-        if (pylon_initialized_) {
-            Pylon::PylonTerminate();
-        }
-    }
-
 protected:
     void preRun() override {
         ProducerThread::preRun();
-
-        Pylon::PylonInitialize();
-        pylon_initialized_ = true;
 
         if (!camera_.open(ctx_.serial, ctx_.width, ctx_.height, ctx_.fps,
                           pylonPixelFormat(), logger)) {
@@ -269,10 +311,6 @@ protected:
 
     void postRun() override {
         camera_.close();
-        if (pylon_initialized_) {
-            Pylon::PylonTerminate();
-            pylon_initialized_ = false;
-        }
         ProducerThread::postRun();
     }
 
@@ -306,11 +344,9 @@ private:
             : "Mono8";
     }
 
-    /** @brief FFmpeg pixel format matching the raw bytes Pylon delivers. */
+    /** @brief FFmpeg pixel format matching the raw bytes the camera actually delivers. */
     AVPixelFormat ffmpegInputFormat() const {
-        return (ctx_.mode == BaslerCameraContext::Mode::Color)
-            ? AV_PIX_FMT_YUYV422
-            : AV_PIX_FMT_GRAY8;
+        return BaslerCamera::pylonFormatToFFmpeg(camera_.actualPylonFormat());
     }
 
     void sendStreamInfo() {
@@ -337,6 +373,12 @@ private:
         const AVPixelFormat fmt = ffmpegInputFormat();
         const int w = camera_.actualWidth();
         const int h = camera_.actualHeight();
+
+        if (fmt == AV_PIX_FMT_NONE) {
+            logger->error("BaslerCameraThread: unsupported camera pixel format '{}'",
+                          camera_.actualPylonFormat());
+            return false;
+        }
 
         if (!input_frame_.reserveVideo(w, h, fmt)) {
             logger->error("BaslerCameraThread: cannot reserve input frame");
@@ -375,7 +417,6 @@ private:
 private:
     BaslerCameraContext ctx_;
     BaslerCamera        camera_;
-    bool                pylon_initialized_{false};
 
     Limef::frame::DecodedFrame    input_frame_;
     Limef::frame::StreamFrame     stream_frame_;
@@ -442,13 +483,6 @@ public:
         , ctx_(ctx)
     {}
 
-    ~BaslerMultispectralThread() override {
-        camera_.close();
-        if (pylon_initialized_) {
-            Pylon::PylonTerminate();
-        }
-    }
-
 protected:
     void preRun() override {
         ProducerThread::preRun();
@@ -457,9 +491,6 @@ protected:
             logger->error("BaslerMultispectralThread: band_filter_values is empty");
             return;
         }
-
-        Pylon::PylonInitialize();
-        pylon_initialized_ = true;
 
         if (!camera_.open(ctx_.serial, ctx_.width, ctx_.height, ctx_.fps,
                           "Mono8", logger)) {
@@ -481,10 +512,6 @@ protected:
 
     void postRun() override {
         camera_.close();
-        if (pylon_initialized_) {
-            Pylon::PylonTerminate();
-            pylon_initialized_ = false;
-        }
         ProducerThread::postRun();
     }
 
@@ -540,7 +567,6 @@ protected:
 private:
     BaslerMultispectralContext ctx_;
     BaslerCamera               camera_;
-    bool                       pylon_initialized_{false};
 
     Limef::frame::TensorFrame  output_tensor_;
 };

@@ -50,8 +50,15 @@ fi
 # Plugin headers: src/ → include/limef/opencv/
 ln -sfn "$PLUGIN_ROOT/src"                   "$STAGING/include/limef/opencv"
 
-# Plugin library
-ln -sfn "$BUILD_PATH/lib/libLimefOpenCV.so"  "$STAGING/lib/libLimefOpenCV.so"
+# Library: all versioned names (libLimefOpenCV.so, .so.0, .so.0.0.1)
+for f in "$BUILD_PATH/lib/"libLimefOpenCV.so*; do
+    [ -e "$f" ] && ln -sfn "$f" "$STAGING/lib/$(basename "$f")"
+done
+
+# Python module (limef_opencv.cpython-*.so)
+for f in "$BUILD_PATH/lib/"limef_opencv.cpython-*.so; do
+    [ -f "$f" ] && ln -sfn "$f" "$STAGING/lib/$(basename "$f")"
+done
 
 echo "LimefOpenCV plugin staged at $STAGING  (build: $BUILD_DIR)"
 echo "  Headers: $STAGING/include/limef/opencv → $PLUGIN_ROOT/src"
