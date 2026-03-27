@@ -1,5 +1,7 @@
 # Limef Plugins
 
+Plugins that extend [Limef library](https://elsampsa.github.io/limef-docs).
+
 Each subdirectory is a self-contained plugin that extends Limef with new threads and
 framefilters.  Plugins are built and distributed independently of the base library.
 
