@@ -53,6 +53,7 @@
 #include "limef/frame/streamframe.h"
 #include "limef/frame/tensorframe.h"
 #include "limef/framefilter/swscale.h"
+#include "limef/timestamp.h"
 
 #include <chrono>
 #include <cstring>
@@ -397,19 +398,34 @@ private:
                         src_stride);
         }
 
-        // Absolute timestamp (wall clock, microseconds since epoch)
-        auto abs_ts = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::system_clock::now().time_since_epoch());
-        input_frame_.setAbsoluteTimestamp(abs_ts);
         input_frame_.setMediaType(Limef::frame::DecodedFrame::MediaType::Video);
         input_frame_.setSlot(ctx_.slot);
         input_frame_.setTimeBase({1, 1'000'000});
 
-        // PTS: microseconds elapsed since stream start
+        // PTS: microseconds elapsed since stream start (steady_clock, CPU side).
+        //
+        // NOTE: BaslerGrabResultPtr::GetTimeStamp() returns a hardware tick
+        // counter from the camera's internal oscillator (typically 1 GHz).
+        // Converting it to microseconds requires reading the GenICam node
+        // "GevTimestampTickFrequency" and dividing:
+        //   pts_us = result->GetTimeStamp() * 1e6 / tick_freq
+        // This would give sub-millisecond accuracy and remove CPU scheduling
+        // jitter from the PTS.  If PTP / IEEE 1588 is configured on the camera
+        // the hardware timestamp is also wall-clock-synced, enabling multi-camera
+        // synchronisation without any additional anchoring.
+        // For now we use steady_clock at grab time — simpler, and accurate enough
+        // for most single-camera use cases.
         auto now = std::chrono::steady_clock::now();
-        if (!stream_start_set_) { stream_start_ = now; stream_start_set_ = true; }
+        if (!stream_start_set_) {
+            stream_start_ = now;
+            stream_start_set_ = true;
+            abst_.reset();
+        }
         av->pts = std::chrono::duration_cast<std::chrono::microseconds>(
             now - stream_start_).count();
+
+        // Absolute timestamp: t0+PTS_delta — consistent with pts above.
+        abst_(&input_frame_);
 
         return true;
     }
@@ -424,6 +440,7 @@ private:
 
     std::chrono::steady_clock::time_point stream_start_;
     bool                                  stream_start_set_{false};
+    Limef::timestamp::ABStamp             abst_;  ///< t0+PTS_delta stamper; reset when stream opens
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
