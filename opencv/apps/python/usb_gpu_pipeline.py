@@ -2,10 +2,10 @@
 usb_gpu_pipeline.py — USB camera → GPU OpenCV Gaussian blur → RTSP
 
 Pipeline (default):
-    USBCameraThread → UploadGPUFrameFilter → EncodingFrameFilter(NVENC) → RTPMuxer → RTSPServer
+    USBCameraThread → SwScaleFrameFilter(NV12) → UploadGPUFrameFilter → EncodingFrameFilter(NVENC) → RTPMuxer → RTSPServer
 
 Pipeline (--modify):
-    USBCameraThread → UploadGPUFrameFilter → DecodedToTensorFrameFilter
+    USBCameraThread → SwScaleFrameFilter(NV12) → UploadGPUFrameFilter → DecodedToTensorFrameFilter
         → GPUOpenCVThread (Gaussian blur)
         → TensorToDecodedFrameFilter → EncodingFrameFilter(NVENC) → RTPMuxer → RTSPServer
 
@@ -42,10 +42,13 @@ def main():
     cam_ctx.width  = args.width
     cam_ctx.height = args.height
     cam_ctx.fps    = args.fps
-    cam_ctx.output_format = limef.AV_PIX_FMT_NV12
+    cam_ctx.capture_format = limef.AV_PIX_FMT_YUYV422
     camera = limef.USBCameraThread("usb-camera", cam_ctx)
 
-    # --- 2. GPU Upload ---
+    # --- 2. SwScale YUYV→NV12 (required before GPU upload) ---
+    swscale = limef.SwScaleFrameFilter("swscale", limef.AV_PIX_FMT_NV12)
+
+    # --- 3. GPU Upload ---
     upload = limef.UploadGPUFrameFilter("gpu-upload", limef.HWACCEL_CUDA)
 
     # --- 3. NVENC Encoder ---
@@ -69,10 +72,10 @@ def main():
         opencv = limef_opencv.GPUOpenCVThread("gpu-opencv")
         t2d    = limef.TensorToDecodedFrameFilter("t2d", limef.CHANNEL_ORDER_RGB)
 
-        camera.cc(upload).cc(d2t).cc(opencv.getInput())
+        camera.cc(swscale).cc(upload).cc(d2t).cc(opencv.getInput())
         opencv.cc(t2d).cc(encoder).cc(rtp_muxer).cc(rtsp_server.getInput())
     else:
-        camera.cc(upload).cc(encoder).cc(rtp_muxer).cc(rtsp_server.getInput())
+        camera.cc(swscale).cc(upload).cc(encoder).cc(rtp_muxer).cc(rtsp_server.getInput())
 
     # --- Start (downstream first) ---
     rtsp_server.start()
@@ -85,8 +88,12 @@ def main():
 
     camera.start()
 
-    print(f"Ready — connect with:")
+    print(f"\nReady — stream URL:")
+    print(f"  rtsp://localhost:{args.port}{URL_TAIL}")
+    print(f"\nPlay with:")
     print(f"  ffplay rtsp://localhost:{args.port}{URL_TAIL}")
+    print(f"  ffplay -fflags nobuffer -flags low_delay -framedrop rtsp://localhost:{args.port}{URL_TAIL}")
+    print()
 
     running = True
     def _stop(sig, frame):
