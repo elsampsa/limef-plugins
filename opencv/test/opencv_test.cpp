@@ -132,8 +132,8 @@ int test_3()
 
     CountFrameFilter counter("counter");
 
-    // gpu_target=CUDA: TensorFrameFifo does H2D upload, so we push CPU frames
-    Limef::FrameFifoContext ctx(false, 10, 0, Limef::HWAccel::CUDA);
+    // target=CUDA_FFMPEG: TensorFrameFifo does H2D upload, so we push CPU frames
+    Limef::FrameFifoContext ctx(false, 10, 0, Limef::frame::BufferLocation::CUDA_FFMPEG);
     Limef::opencv::GPUOpenCVThread proc("gpu-opencv", ctx);
     proc.getOutput().cc(counter);
     proc.start();  // blocks until preRun() completes — fifo is ready on return

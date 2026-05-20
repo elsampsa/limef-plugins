@@ -86,7 +86,7 @@ PYBIND11_MODULE(limef_opencv, m) {
                      false,                   // leaky = false
                      fifo_size,               // stack size
                      0,                       // timeout_ms: 0 = wait forever
-                     Limef::HWAccel::CUDA,    // GPU target
+                     Limef::frame::BufferLocation::CUDA_FFMPEG,  // GPU target
                      ""
                  );
                  return std::make_shared<Limef::opencv::GPUOpenCVThread>(name, ctx);

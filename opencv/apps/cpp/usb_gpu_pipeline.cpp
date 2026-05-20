@@ -17,10 +17,10 @@
  * usb_gpu_pipeline - USB camera to RTSP pipeline with GPU OpenCV processing
  *
  * Pipeline (default, no --modify):
- *   USBCameraThread → UploadGPUFrameFilter → EncodingFrameFilter(NVENC) → RTPMuxer → RTSPServer
+ *   USBCameraThread → SwScaleFrameFilter(NV12) → UploadGPUFrameFilter → EncodingFrameFilter(NVENC) → RTPMuxer → RTSPServer
  *
  * Pipeline (with --modify, GPU Gaussian blur via OpenCV):
- *   USBCameraThread → UploadGPUFrameFilter → DecodedToTensorFrameFilter
+ *   USBCameraThread → SwScaleFrameFilter(NV12) → UploadGPUFrameFilter → DecodedToTensorFrameFilter
  *       → GPUOpenCVThread (Gaussian blur on TensorFrame)
  *       → TensorToDecodedFrameFilter → EncodingFrameFilter(NVENC) → RTPMuxer → RTSPServer
  *
@@ -47,7 +47,8 @@
 #include "limef/framefilter/decoded_to_tensor.h"
 #include "limef/framefilter/tensor_to_decoded.h"
 #include "limef/framefilter/encoding.h"
-#include "limef/framefilter/rtp.h"
+#include "limef/framefilter/swscale.h"
+#include "limef/framefilter/rtpmuxer.h"
 #include "limef/framefilter/dump.h"
 #include "limef/rtsp/rtspserverthread.h"
 #include "limef/encode/ffmpeg_encoder.h"
@@ -145,18 +146,21 @@ int main(int argc, char** argv) {
     cam_ctx.width = width;
     cam_ctx.height = height;
     cam_ctx.fps = fps;
-    cam_ctx.output_format = AV_PIX_FMT_NV12;
+    cam_ctx.capture_format = AV_PIX_FMT_YUYV422;
     USBCameraThread camera("usb-camera", cam_ctx);
 
-    // --- 2. GPU Upload ---
-    UploadGPUParams upload_params(HWAccel::CUDA);
+    // --- 2. SwScale YUYV→NV12 (required before GPU upload) ---
+    SwScaleFrameFilter swscale("swscale", AV_PIX_FMT_NV12);
+
+    // --- 3. GPU Upload ---
+    UploadGPUParams upload_params(frame::BufferLocation::CUDA_FFMPEG);
     UploadGPUFrameFilter upload("gpu-upload", upload_params);
 
-    // --- 3. DecodedFrame → TensorFrame ---
+    // --- 4. DecodedFrame → TensorFrame ---
     DecodedToTensorFrameFilter d2t("d2t", ChannelOrder::RGB);
 
     // --- 4. GPU OpenCV processing (from LimefOpenCV plugin) ---
-    FrameFifoContext opencv_ctx(false, 5, 0, HWAccel::CUDA, "");
+    FrameFifoContext opencv_ctx(false, 5, 0, frame::BufferLocation::CUDA_FFMPEG, "");
     Limef::opencv::GPUOpenCVThread opencv_thread("gpu-opencv", opencv_ctx);
 
     // --- 5. TensorFrame → DecodedFrame ---
@@ -182,10 +186,10 @@ int main(int argc, char** argv) {
 
     // --- Wire the pipeline ---
     if (modify) {
-        camera.getOutput().cc(upload).cc(d2t).cc(opencv_thread.getInput());
+        camera.getOutput().cc(swscale).cc(upload).cc(d2t).cc(opencv_thread.getInput());
         opencv_thread.getOutput().cc(t2d).cc(encoder).cc(rtp_muxer).cc(rtsp_server.getInput());
     } else {
-        camera.getOutput().cc(upload).cc(encoder).cc(rtp_muxer).cc(rtsp_server.getInput());
+        camera.getOutput().cc(swscale).cc(upload).cc(encoder).cc(rtp_muxer).cc(rtsp_server.getInput());
     }
 
     // --- Start (downstream first) ---
