@@ -2,10 +2,10 @@
 usb_gpu_pipeline.py — USB camera → GPU OpenCV Gaussian blur → RTSP
 
 Pipeline (default):
-    USBCameraThread → SwScaleFrameFilter(NV12) → UploadGPUFrameFilter → EncodingFrameFilter(NVENC) → RTPMuxer → RTSPServer
+    USBCameraThread → SwScaleFrameFilter(NV12) → DecodedUploadFrameFilter → EncodingFrameFilter(NVENC) → RTPMuxer → RTSPServer
 
 Pipeline (--modify):
-    USBCameraThread → SwScaleFrameFilter(NV12) → UploadGPUFrameFilter → DecodedToTensorFrameFilter
+    USBCameraThread → SwScaleFrameFilter(NV12) → DecodedUploadFrameFilter → DecodedToTensorFrameFilter
         → GPUOpenCVThread (Gaussian blur)
         → TensorToDecodedFrameFilter → EncodingFrameFilter(NVENC) → RTPMuxer → RTSPServer
 
@@ -49,7 +49,7 @@ def main():
     swscale = limef.SwScaleFrameFilter("swscale", limef.AV_PIX_FMT_NV12)
 
     # --- 3. GPU Upload ---
-    upload = limef.UploadGPUFrameFilter("gpu-upload", limef.HWACCEL_CUDA)
+    upload = limef.DecodedUploadFrameFilter("gpu-upload")
 
     # --- 3. NVENC Encoder ---
     enc = limef.FFmpegEncoderParams()

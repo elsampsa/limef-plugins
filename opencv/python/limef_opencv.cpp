@@ -29,7 +29,7 @@
 //   import limef_opencv
 //
 //   cam     = limef.USBCameraThread('cam', ctx)
-//   upload  = limef.UploadGPUFrameFilter('upload', limef.HWACCEL_CUDA)
+//   upload  = limef.DecodedUploadFrameFilter('upload')
 //   d2t     = limef.DecodedToTensorFrameFilter('d2t', limef.CHANNEL_ORDER_RGB)
 //   opencv  = limef_opencv.GPUOpenCVThread('opencv')
 //   t2d     = limef.TensorToDecodedFrameFilter('t2d', limef.CHANNEL_ORDER_RGB)
@@ -70,7 +70,7 @@ PYBIND11_MODULE(limef_opencv, m) {
         "Non-TensorFrame frames (SignalFrame, StreamFrame, etc.) pass through unchanged.\n\n"
         "Typical pipeline::\n\n"
         "    cam    = limef.USBCameraThread('cam', ctx)\n"
-        "    upload = limef.UploadGPUFrameFilter('upload', limef.HWACCEL_CUDA)\n"
+        "    upload = limef.DecodedUploadFrameFilter('upload')\n"
         "    d2t    = limef.DecodedToTensorFrameFilter('d2t', limef.CHANNEL_ORDER_RGB)\n"
         "    opencv = limef_opencv.GPUOpenCVThread('opencv')\n"
         "    t2d    = limef.TensorToDecodedFrameFilter('t2d', limef.CHANNEL_ORDER_RGB)\n\n"
@@ -86,7 +86,7 @@ PYBIND11_MODULE(limef_opencv, m) {
                      false,                   // leaky = false
                      fifo_size,               // stack size
                      0,                       // timeout_ms: 0 = wait forever
-                     Limef::frame::BufferLocation::CUDA_FFMPEG,  // GPU target
+                     Limef::frame::BufferLocation::CUDA,  // GPU target
                      ""
                  );
                  return std::make_shared<Limef::opencv::GPUOpenCVThread>(name, ctx);
