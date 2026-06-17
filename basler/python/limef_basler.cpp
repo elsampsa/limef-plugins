@@ -152,7 +152,16 @@ PYBIND11_MODULE(limef_basler, m) {
              },
              "Block until the thread finishes. Call after requestStop().")
         .def("isStarted",   &BaslerCameraThread::isStarted,
-             "Return True if the thread is running.");
+             "Return True if the thread is running.")
+        .def("setParam",    &BaslerCameraThread::setParam,
+             py::arg("key"), py::arg("value"),
+             py::call_guard<py::gil_scoped_release>(),
+             "Set a Pylon/GenICam camera parameter at runtime.\n\n"
+             "Args:\n"
+             "    key:   GenICam node name (e.g. 'ExposureTime', 'Gain').\n"
+             "    value: value string accepted by the node.\n\n"
+             "The GIL is released while the call is in progress because the\n"
+             "Pylon SDK may block briefly on the camera bus.");
 
     // ── BaslerMultispectralContext ─────────────────────────────────────────────
 

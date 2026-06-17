@@ -146,6 +146,27 @@ back downstream.  `StreamFrame`s are forwarded unchanged.  The interface is
 created with `leaky=True` so the camera grab loop never stalls if Python falls
 behind.
 
+### Live parameter control
+
+While the stream is running, type `KEY VALUE` into the terminal to adjust any
+GenICam parameter on the fly:
+
+```
+ExposureTime 20000        # set exposure to 20 ms (manual)
+ExposureAuto Off          # disable auto-exposure
+ExposureAuto Continuous   # re-enable auto-exposure
+Gain 5.0                  # set gain manually
+GainAuto Off              # disable auto-gain  (must do this before setting Gain)
+GainAuto Continuous       # re-enable auto-gain
+FocusDistance 0.8         # focus at ~80 cm
+quit                      # stop the stream
+```
+
+> **Note:** GenICam enum values are case-sensitive — `Off`, `Once`,
+> `Continuous` (not `off`, `on`, `continuous`).  There is no `On`; the
+> opposite of `Off` for auto features is `Continuous`.  To disable auto before
+> setting a manual value, send the `Off` command first.
+
 ### Options
 
 | Option | Default | Description |

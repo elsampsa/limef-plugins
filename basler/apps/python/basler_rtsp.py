@@ -21,6 +21,7 @@ Test without hardware:
     PYLON_CAMEMU=1 python3 basler_rtsp.py
 """
 
+import os
 import sys
 import time
 import argparse
@@ -238,7 +239,27 @@ def main():
     consumer_thread = threading.Thread(
         target=consumer, daemon=True, name="limef-consumer")
 
+    # ── Live parameter console ─────────────────────────────────────────────────
+
+    def console():
+        print("Live control — type KEY VALUE to adjust camera parameters.")
+        print("  Examples: ExposureTime 20000 | ExposureAuto Continuous | Gain 5.0")
+        print("  Type 'quit' to stop.\n")
+        for line in sys.stdin:
+            line = line.strip()
+            if line.lower() in ("quit", "exit", "q"):
+                stop_event.set()
+                break
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                cam.setParam(parts[0], parts[1])
+            elif line:
+                print("  Usage: KEY VALUE")
+
     # ── Start everything ───────────────────────────────────────────────────────
+
+    if sys.stdin.isatty():
+        threading.Thread(target=console, daemon=True, name="limef-console").start()
 
     print("Starting RTSP server ...")
     rtsp.start()
@@ -263,32 +284,26 @@ def main():
         if args.secs > 0:
             time.sleep(args.secs)
         else:
-            while True:
+            while not stop_event.is_set():
                 time.sleep(0.5)
     except KeyboardInterrupt:
         print("\nShutting down...")
 
     # ── Cleanup ────────────────────────────────────────────────────────────────
 
+    # Stop camera first so the consumer thread stops receiving frames and exits.
+    print("Stopping camera ...")
+    cam.stop()
+
     stop_event.set()
     consumer_thread.join(timeout=2.0)
     elapsed = time.monotonic() - t_start[0]
 
-    print("Stopping camera ...")
-    try:
-        cam.stop()
-    except KeyboardInterrupt:
-        print("Interrupted during stop — forcing exit.")
-        sys.exit(1)
-
     print("Stopping RTSP server ...")
-    try:
-        rtsp.stop()
-    except KeyboardInterrupt:
-        print("Interrupted during stop — forcing exit.")
-        sys.exit(1)
+    rtsp.stop()
 
     print(f"\nDone.  {elapsed:.1f} s, {video_count[0]} video frames processed.")
+    os._exit(0)  # skip Python GC to avoid C++ extension destructor ordering issues
 
 
 if __name__ == "__main__":

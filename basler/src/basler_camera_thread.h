@@ -322,6 +322,22 @@ public:
         , swscale_("basler_swscale", ctx.output_format)
     {}
 
+    void setParam(const std::string& key, const std::string& value) {
+        if (!camera_.isOpen()) return;
+        try {
+            std::size_t pos;
+            double d = std::stod(value, &pos);
+            if (pos == value.size()) {
+                if (value.find('.') == std::string::npos)
+                    camera_.setInt(key, static_cast<int64_t>(d));
+                else
+                    camera_.setFloat(key, d);
+                return;
+            }
+        } catch (...) {}
+        camera_.setEnum(key, value);
+    }
+
 protected:
     void preRun() override {
         ProducerThread::preRun();
