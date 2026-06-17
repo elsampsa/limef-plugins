@@ -76,24 +76,28 @@ PYBIND11_MODULE(limef_basler, m) {
     py::class_<BaslerCameraContext>(m, "BaslerCameraContext",
         "Configuration for BaslerCameraThread.\n\n"
         "Attributes:\n"
-        "    serial        Camera serial number; empty string = first available camera.\n"
-        "    slot          Stream slot identifier (default: 1).\n"
-        "    width         Requested capture width;  0 = camera default.\n"
-        "    height        Requested capture height; 0 = camera default.\n"
-        "    fps           Requested frame rate (default: 30.0).\n"
-        "    mode          Mode.Color or Mode.Mono (default: Mode.Color).\n"
-        "    output_format AVPixelFormat after SwScale conversion (default: AV_PIX_FMT_NV12).")
+        "    serial            Camera serial number; empty string = first available camera.\n"
+        "    slot              Stream slot identifier (default: 1).\n"
+        "    width             Requested capture width;  0 = camera default.\n"
+        "    height            Requested capture height; 0 = camera default.\n"
+        "    fps               Requested frame rate (default: 30.0).\n"
+        "    mode              Mode.Color or Mode.Mono (default: Mode.Color).\n"
+        "    output_format     AVPixelFormat after SwScale conversion (default: AV_PIX_FMT_NV12).\n"
+        "    exposure_auto  Enable auto-exposure (default: True).\n"
+        "    feature_file   Path to a Pylon feature file (.pfs) loaded at startup; empty = no file.")
         .def(py::init<>())
-        .def_readwrite("serial",        &BaslerCameraContext::serial)
-        .def_readwrite("slot",          &BaslerCameraContext::slot)
-        .def_readwrite("width",         &BaslerCameraContext::width)
-        .def_readwrite("height",        &BaslerCameraContext::height)
-        .def_readwrite("fps",           &BaslerCameraContext::fps)
-        .def_readwrite("mode",          &BaslerCameraContext::mode)
+        .def_readwrite("serial",           &BaslerCameraContext::serial)
+        .def_readwrite("slot",             &BaslerCameraContext::slot)
+        .def_readwrite("width",            &BaslerCameraContext::width)
+        .def_readwrite("height",           &BaslerCameraContext::height)
+        .def_readwrite("fps",              &BaslerCameraContext::fps)
+        .def_readwrite("mode",             &BaslerCameraContext::mode)
         .def_property("output_format",
             [](const BaslerCameraContext& c) { return static_cast<int>(c.output_format); },
             [](BaslerCameraContext& c, int v) { c.output_format = static_cast<AVPixelFormat>(v); },
-            "AVPixelFormat after SwScale conversion (use limef.AV_PIX_FMT_* constants).");
+            "AVPixelFormat after SwScale conversion (use limef.AV_PIX_FMT_* constants).")
+        .def_readwrite("exposure_auto",  &BaslerCameraContext::exposure_auto)
+        .def_readwrite("feature_file",   &BaslerCameraContext::feature_file);
 
     // ── BaslerCameraThread ────────────────────────────────────────────────────
 

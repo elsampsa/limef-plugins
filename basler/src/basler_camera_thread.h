@@ -217,6 +217,30 @@ struct BaslerCamera {
         }
     }
 
+    /** @brief Set a float GenICam node (silently warns on failure). */
+    void setFloat(const std::string& name, double value) {
+        if (!camera_) return;
+        try {
+            Pylon::CFloatParameter(camera_->GetNodeMap(), name.c_str())
+                .SetValue(value);
+        } catch (const Pylon::GenericException& e) {
+            if (logger_) logger_->warn("BaslerCamera: cannot set {} = {:.3f}: {}",
+                                        name, value, e.what());
+        }
+    }
+
+    /** @brief Load a Pylon feature set file (.pfs) into the camera. */
+    void loadFeatureFile(const std::string& path) {
+        if (!camera_ || path.empty()) return;
+        try {
+            Pylon::CFeaturePersistence::Load(path.c_str(), &camera_->GetNodeMap(), true);
+            if (logger_) logger_->info("BaslerCamera: loaded feature file '{}'", path);
+        } catch (const Pylon::GenericException& e) {
+            if (logger_) logger_->warn("BaslerCamera: cannot load feature file '{}': {}",
+                                        path, e.what());
+        }
+    }
+
     int         actualWidth()        const { return actual_width_;        }
     int         actualHeight()       const { return actual_height_;       }
     std::string actualPylonFormat()  const { return actual_pylon_format_; }
@@ -258,6 +282,8 @@ struct BaslerCameraContext {
     int         width{0};         ///< 0 = camera default
     int         height{0};        ///< 0 = camera default
     double      fps{30.0};
+    bool        exposure_auto{true};  ///< Enable ExposureAuto=Continuous (good default for first run)
+    std::string feature_file{""};     ///< Path to a Pylon .pfs file; loaded after open if non-empty
     Mode        mode{Mode::Color};
     AVPixelFormat output_format{AV_PIX_FMT_NV12}; ///< Format after SwScale
 };
@@ -305,6 +331,11 @@ protected:
             logger->error("BaslerCameraThread: failed to open camera");
             return;
         }
+
+        // Feature file overrides all GenICam settings (loaded before exposure_auto).
+        camera_.loadFeatureFile(ctx_.feature_file);
+        if (ctx_.exposure_auto)
+            camera_.setEnum("ExposureAuto", "Continuous");
 
         swscale_.cc(output_ff);
         sendStreamInfo();

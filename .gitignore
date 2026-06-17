@@ -22,3 +22,4 @@ __pycache__/
 
 # build artifacts
 *.deb
+basler/apps/python/frames/
