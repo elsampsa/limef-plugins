@@ -233,7 +233,7 @@ struct BaslerCamera {
     void loadFeatureFile(const std::string& path) {
         if (!camera_ || path.empty()) return;
         try {
-            Pylon::CFeaturePersistence::Load(path.c_str(), &camera_->GetNodeMap(), true);
+            Pylon::CFeaturePersistence::Load(path.c_str(), &camera_->GetNodeMap(), false);
             if (logger_) logger_->info("BaslerCamera: loaded feature file '{}'", path);
         } catch (const Pylon::GenericException& e) {
             if (logger_) logger_->warn("BaslerCamera: cannot load feature file '{}': {}",
