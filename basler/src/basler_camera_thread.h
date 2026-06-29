@@ -96,20 +96,29 @@ struct BaslerCamera {
     /**
      * @brief Open and configure the camera.
      *
+     * Setup order (each step overrides the previous):
+     *   1. Connect and open the device.
+     *   2. Load feature_file as a baseline (if non-empty).
+     *   3. Apply explicit context overrides: pylon_format, width, height, fps.
+     *   4. Read back actual dimensions and pixel format.
+     *
      * Calls PylonInitialize() internally; PylonTerminate() is called in the
-     * destructor after CInstantCamera is destroyed.
+     * destructor after CInstantCamera is destroyed.  Call startGrabbing()
+     * separately after any additional per-camera setup (e.g. ExposureAuto).
      *
      * @param serial        Serial number string; "" = first available camera.
-     * @param width         Requested width  (0 = keep camera default).
-     * @param height        Requested height (0 = keep camera default).
-     * @param fps           Requested acquisition frame rate.
-     * @param pylon_format  GenICam PixelFormat value, e.g. "Mono8".
+     * @param width         Requested width  (0 = keep feature-file / camera default).
+     * @param height        Requested height (0 = keep feature-file / camera default).
+     * @param fps           Requested acquisition frame rate; 0 = keep feature-file / native rate.
+     * @param pylon_format  GenICam PixelFormat value, e.g. "Mono8" — always applied.
+     * @param feature_file  Path to a Pylon .pfs file loaded before context overrides; "" = none.
      * @param log           Logger to use for messages.
      * @return true on success; actual width / height / format readable afterwards.
      */
     bool open(const std::string& serial,
               int width, int height, double fps,
               const std::string& pylon_format,
+              const std::string& feature_file,
               std::shared_ptr<spdlog::logger> log)
     {
         logger_ = log;
@@ -133,22 +142,40 @@ struct BaslerCamera {
             return false;
         }
 
-        setEnum("PixelFormat", pylon_format);
+        // Step 2: feature file as baseline (loaded before context overrides).
+        if (!feature_file.empty()) {
+            try {
+                Pylon::CFeaturePersistence::Load(
+                    feature_file.c_str(), &camera_->GetNodeMap(), false);
+                logger_->info("BaslerCamera: loaded feature file '{}'", feature_file);
+            } catch (const Pylon::GenericException& e) {
+                logger_->warn("BaslerCamera: cannot load feature file '{}': {}",
+                              feature_file, e.what());
+            }
+        }
 
+        // Step 3: explicit context overrides (always applied on top of the feature file).
+        setEnum("PixelFormat", pylon_format);
         if (width  > 0) setInt("Width",  width);
         if (height > 0) setInt("Height", height);
 
-        // Enable frame-rate control (may not be available on all models)
         try {
-            Pylon::CBooleanParameter(camera_->GetNodeMap(),
-                                     "AcquisitionFrameRateEnable").SetValue(true);
-            Pylon::CFloatParameter(camera_->GetNodeMap(),
-                                   "AcquisitionFrameRate").SetValue(fps);
+            if (fps > 0) {
+                Pylon::CBooleanParameter(camera_->GetNodeMap(),
+                                         "AcquisitionFrameRateEnable").SetValue(true);
+                Pylon::CFloatParameter(camera_->GetNodeMap(),
+                                       "AcquisitionFrameRate").SetValue(fps);
+            } else {
+                // fps=0: disable the limiter so a value baked into the feature
+                // file cannot cap acquisition.
+                Pylon::CBooleanParameter(camera_->GetNodeMap(),
+                                         "AcquisitionFrameRateEnable").SetValue(false);
+            }
         } catch (const Pylon::GenericException& e) {
             logger_->warn("BaslerCamera: cannot set frame rate: {}", e.what());
         }
 
-        // Read back actual dimensions and pixel format (may differ from requested)
+        // Step 4: read back actual values after all overrides.
         try {
             actual_width_  = static_cast<int>(
                 Pylon::CIntegerParameter(camera_->GetNodeMap(), "Width").GetValue());
@@ -169,8 +196,12 @@ struct BaslerCamera {
 
         logger_->info("BaslerCamera: opened {}x{} @ {:.1f} fps format={}",
                       actual_width_, actual_height_, fps, actual_pylon_format_);
-        camera_->StartGrabbing();
         return true;
+    }
+
+    /** @brief Start continuous acquisition.  Call after open() and any per-camera setup. */
+    void startGrabbing() {
+        if (camera_) camera_->StartGrabbing();
     }
 
     void close() {
@@ -343,15 +374,14 @@ protected:
         ProducerThread::preRun();
 
         if (!camera_.open(ctx_.serial, ctx_.width, ctx_.height, ctx_.fps,
-                          pylonPixelFormat(), logger)) {
+                          pylonPixelFormat(), ctx_.feature_file, logger)) {
             logger->error("BaslerCameraThread: failed to open camera");
             return;
         }
 
-        // Feature file overrides all GenICam settings (loaded before exposure_auto).
-        camera_.loadFeatureFile(ctx_.feature_file);
         if (ctx_.exposure_auto)
             camera_.setEnum("ExposureAuto", "Continuous");
+        camera_.startGrabbing();
 
         swscale_.cc(output_ff);
         sendStreamInfo();
@@ -503,6 +533,8 @@ struct BaslerMultispectralContext {
     int              width{0};
     int              height{0};
     double           fps{1.0};              ///< Cube rate (frames per second of complete cubes)
+    std::string      feature_file{""};      ///< Path to a Pylon .pfs file; loaded before context overrides
+    bool             exposure_auto{false};  ///< Set ExposureAuto=Continuous after feature file load
     std::vector<int> band_filter_values{};  ///< GenICam filter node values, one per band
     int              filter_settle_ms{50};  ///< Wait after each filter change before grabbing
     std::string      filter_node{"FilterWheelPosition"}; ///< GenICam integer node for the filter
@@ -556,11 +588,17 @@ protected:
             return;
         }
 
-        if (!camera_.open(ctx_.serial, ctx_.width, ctx_.height, ctx_.fps,
-                          "Mono8", logger)) {
+        // Open with fps=0: no AcquisitionFrameRate cap — the cube rate is
+        // controlled by filter_settle_ms waits, not by the camera's rate limiter.
+        if (!camera_.open(ctx_.serial, ctx_.width, ctx_.height, 0.0,
+                          "Mono8", ctx_.feature_file, logger)) {
             logger->error("BaslerMultispectralThread: failed to open camera");
             return;
         }
+
+        if (ctx_.exposure_auto)
+            camera_.setEnum("ExposureAuto", "Continuous");
+        camera_.startGrabbing();
 
         // Pre-allocate output tensor: one plane of shape (N, H, W)
         const int N = static_cast<int>(ctx_.band_filter_values.size());

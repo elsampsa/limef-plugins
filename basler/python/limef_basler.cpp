@@ -173,6 +173,11 @@ PYBIND11_MODULE(limef_basler, m) {
         "    width              Requested width;  0 = camera default.\n"
         "    height             Requested height; 0 = camera default.\n"
         "    fps                Cube rate — complete spectral cubes per second (default: 1.0).\n"
+        "                       Note: the camera's AcquisitionFrameRate limiter is always disabled\n"
+        "                       (fps=0 passed to open()); cube rate is controlled by filter_settle_ms.\n"
+        "    feature_file       Path to a Pylon .pfs file loaded as a baseline before context\n"
+        "                       overrides are applied; empty = no file (default: '').\n"
+        "    exposure_auto      Set ExposureAuto=Continuous after feature file load (default: False).\n"
         "    band_filter_values List of integer filter wheel positions, one per band.\n"
         "    filter_settle_ms   Milliseconds to wait after each filter change (default: 50).\n"
         "    filter_node        GenICam node name for the filter wheel (default: FilterWheelPosition).")
@@ -182,6 +187,8 @@ PYBIND11_MODULE(limef_basler, m) {
         .def_readwrite("width",              &BaslerMultispectralContext::width)
         .def_readwrite("height",             &BaslerMultispectralContext::height)
         .def_readwrite("fps",                &BaslerMultispectralContext::fps)
+        .def_readwrite("feature_file",       &BaslerMultispectralContext::feature_file)
+        .def_readwrite("exposure_auto",      &BaslerMultispectralContext::exposure_auto)
         .def_readwrite("band_filter_values", &BaslerMultispectralContext::band_filter_values)
         .def_readwrite("filter_settle_ms",   &BaslerMultispectralContext::filter_settle_ms)
         .def_readwrite("filter_node",        &BaslerMultispectralContext::filter_node);
