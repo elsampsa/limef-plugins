@@ -182,7 +182,7 @@ int main(int argc, char** argv) {
 
     // --- 8. RTSP Server ---
     FrameFifoContext rtsp_ctx(false, 5, 100);
-    Limef::rtsp::RTSPServerThread rtsp_server("rtsp-server", rtsp_ctx, port);
+    Limef::rtsp::RTSPServerThread rtsp_server("rtsp-server", rtsp_ctx, Limef::rtsp::RTSPServerContext{port});
 
     // --- Wire the pipeline ---
     if (modify) {
