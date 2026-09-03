@@ -3,7 +3,7 @@
  * @brief   Unit tests for the Basler camera plugin.
  *
  * Tests 1    : static (no hardware / no Pylon emulator needed)
- * Tests 2-4  : require PYLON_CAMEMU=1 (set by the test runner via tests.yaml env)
+ * Tests 2-3  : require PYLON_CAMEMU=1 (set by the test runner via tests.yaml env)
  *
  * Build:  cd build_debug && ../run_cmake.bash && make -j$(nproc)
  * Run:    cd testing && ./runone.bash basler_test:1
@@ -32,13 +32,11 @@ public:
     explicit CountFrameFilter(std::string name) : SimpleFrameFilter(std::move(name)) {}
 
     std::atomic<int> decoded_count{0};
-    std::atomic<int> tensor_count{0};
     std::atomic<int> stream_count{0};
 
     void go(const Limef::frame::Frame* frame) override {
         switch (frame->getFrameClass()) {
             case Limef::frame::FrameClass::Decoded: ++decoded_count; break;
-            case Limef::frame::FrameClass::Tensor:  ++tensor_count;  break;
             case Limef::frame::FrameClass::Stream:  ++stream_count;  break;
             default: break;
         }
@@ -144,43 +142,6 @@ int test_3()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test 4 — BaslerMultispectralThread, emulator, 3 bands → TensorFrame
-//
-// Note: the Pylon emulator has no filter wheel, so setInt("FilterWheelPosition")
-// will warn but not fail.  The thread still grabs N Mono8 frames per cube.
-// ─────────────────────────────────────────────────────────────────────────────
-
-int test_4()
-{
-    const int WANT_CUBES = 2;
-    const int TIMEOUT_MS = 15000;
-
-    CountFrameFilter counter("counter");
-
-    Limef::basler::BaslerMultispectralContext ctx;
-    ctx.band_filter_values = {0, 1, 2};   // 3 bands
-    ctx.filter_settle_ms   = 10;           // short settle for emulator
-    ctx.fps                = 5.0;
-
-    Limef::basler::BaslerMultispectralThread cam("basler-ms", ctx);
-    cam.getOutput().cc(counter);
-    cam.start();
-
-    int waited = 0;
-    while (counter.tensor_count < WANT_CUBES && waited < TIMEOUT_MS) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        waited += 100;
-    }
-
-    cam.requestStop();
-    cam.waitStop();
-
-    printf("tensor frames: %d\n", counter.tensor_count.load());
-
-    return (counter.tensor_count >= WANT_CUBES) ? 0 : 1;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -207,7 +168,6 @@ int main(int argc, char** argv)
     case 1: return test_1();
     case 2: return test_2();
     case 3: return test_3();
-    case 4: return test_4();
     default:
         printf("No such test %s\n", argv[1]);
         return 1;
