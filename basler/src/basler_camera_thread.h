@@ -20,9 +20,8 @@
  *
  * ## Classes
  *
- *   BaslerCamera              — RAII helper: open/configure/grab/close one camera
- *   BaslerCameraThread        — single-band producer (colour or mono, set by Mode)
- *   BaslerMultispectralThread — multi-band producer, emits TensorFrame(N,H,W)
+ *   BaslerCamera       — RAII helper: open/configure/grab/close one camera
+ *   BaslerCameraThread — single-band producer (colour or mono, set by Mode)
  *
  * ## Output — BaslerCameraThread
  *
@@ -31,11 +30,6 @@
  *
  *   Mode::Color — requests YUV422_YUYV_Packed, converts to output_format (default NV12)
  *   Mode::Mono  — requests Mono8,              converts to output_format (default GRAY8)
- *
- * ## Output — BaslerMultispectralThread
- *
- *   One TensorFrame per spectral cube, shape (N, H, W), DType::UInt8, CPU.
- *   N = band_filter_values.size().  Timestamp reflects the start of the first grab.
  *
  * ## Testing without hardware
  *
@@ -51,7 +45,6 @@
 #include "limef/thread/producer.h"
 #include "limef/frame/decodedframe.h"
 #include "limef/frame/streamframe.h"
-#include "limef/frame/tensorframe.h"
 #include "limef/framefilter/swscale.h"
 #include "limef/timestamp.h"
 
@@ -518,159 +511,6 @@ private:
     std::chrono::steady_clock::time_point stream_start_;
     bool                                  stream_start_set_{false};
     Limef::timestamp::ABStamp             abst_;  ///< t0+PTS_delta stamper; reset when stream opens
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Context — multispectral
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * @brief Configuration for BaslerMultispectralThread.
- */
-struct BaslerMultispectralContext {
-    std::string      serial{""};
-    Slot             slot{1};
-    int              width{0};
-    int              height{0};
-    double           fps{1.0};              ///< Cube rate (frames per second of complete cubes)
-    std::string      feature_file{""};      ///< Path to a Pylon .pfs file; loaded before context overrides
-    bool             exposure_auto{false};  ///< Set ExposureAuto=Continuous after feature file load
-    std::vector<int> band_filter_values{};  ///< GenICam filter node values, one per band
-    int              filter_settle_ms{50};  ///< Wait after each filter change before grabbing
-    std::string      filter_node{"FilterWheelPosition"}; ///< GenICam integer node for the filter
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BaslerMultispectralThread
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * @brief Basler camera thread for multispectral (spectral cube) acquisition.
- *
- * Cycles through `ctx.band_filter_values`, setting the filter wheel position
- * before each grab.  All N Mono8 frames are packed into a single CPU
- * TensorFrame of shape (N, H, W) which is emitted once per complete cube.
- *
- * No SwScale — Mono8 bytes are copied directly into the tensor plane.
- *
- * Temporal note: the cube spans N × (exposure + filter_settle_ms).  The scene
- * must be quasi-static for valid band registration.  The cube timestamp
- * reflects the wall-clock time at the start of the first grab.
- *
- * @code{.cpp}
- * BaslerMultispectralContext ctx;
- * ctx.band_filter_values = {0, 1, 2, 3, 4};  // 5 spectral bands
- * ctx.filter_settle_ms   = 60;
- *
- * BaslerMultispectralThread cam("ms-cam", ctx);
- * DumpFrameFilter           dump("dump");
- * cam.getOutput().cc(dump);
- * cam.start();
- * @endcode
- */
-class BaslerMultispectralThread : public Limef::thread::ProducerThread {
-    THREAD_CLASS(BaslerMultispectralThread);
-
-public:
-    explicit BaslerMultispectralThread(std::string name,
-                                       const BaslerMultispectralContext& ctx)
-        : ProducerThread(name, ctx.slot, Limef::FrameFifoContext(),
-                         static_cast<int>(ctx.fps))
-        , ctx_(ctx)
-    {}
-
-protected:
-    void preRun() override {
-        ProducerThread::preRun();
-
-        if (ctx_.band_filter_values.empty()) {
-            logger->error("BaslerMultispectralThread: band_filter_values is empty");
-            return;
-        }
-
-        // Open with fps=0: no AcquisitionFrameRate cap — the cube rate is
-        // controlled by filter_settle_ms waits, not by the camera's rate limiter.
-        if (!camera_.open(ctx_.serial, ctx_.width, ctx_.height, 0.0,
-                          "Mono8", ctx_.feature_file, logger)) {
-            logger->error("BaslerMultispectralThread: failed to open camera");
-            return;
-        }
-
-        if (ctx_.exposure_auto)
-            camera_.setEnum("ExposureAuto", "Continuous");
-        camera_.startGrabbing();
-
-        // Pre-allocate output tensor: one plane of shape (N, H, W)
-        const int N = static_cast<int>(ctx_.band_filter_values.size());
-        const int H = camera_.actualHeight();
-        const int W = camera_.actualWidth();
-        const int64_t shape[3] = {N, H, W};
-        output_tensor_.reserveCPUPlane(0, 3, shape, Limef::frame::DType::UInt8);
-        output_tensor_.setNumPlanes(1);
-
-        logger->info("BaslerMultispectralThread: {}x{} x {} bands, settle={}ms",
-                     W, H, N, ctx_.filter_settle_ms);
-    }
-
-    void postRun() override {
-        camera_.close();
-        ProducerThread::postRun();
-    }
-
-    std::chrono::microseconds task() override {
-        if (!camera_.isOpen()) {
-            return std::chrono::microseconds(100'000);
-        }
-
-        const int N = static_cast<int>(ctx_.band_filter_values.size());
-        const int H = camera_.actualHeight();
-        const int W = camera_.actualWidth();
-        uint8_t* const tensor_buf = output_tensor_.planes[0].data_;
-
-        std::chrono::steady_clock::time_point cube_start;
-
-        for (int n = 0; n < N; ++n) {
-            // Set filter position
-            camera_.setInt(ctx_.filter_node, ctx_.band_filter_values[n]);
-
-            // Wait for filter to settle
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(ctx_.filter_settle_ms));
-
-            if (n == 0) {
-                cube_start = std::chrono::steady_clock::now();
-            }
-
-            // Grab one Mono8 frame
-            Pylon::CGrabResultPtr result;
-            if (!camera_.retrieve(result) || !result->GrabSucceeded()) {
-                logger->warn("BaslerMultispectralThread: grab failed at band {}", n);
-                return std::chrono::microseconds(1'000);
-            }
-
-            // Copy Mono8 plane into tensor band n (stride = W bytes)
-            const auto* src = static_cast<const uint8_t*>(result->GetBuffer());
-            std::memcpy(tensor_buf + n * H * W, src, static_cast<size_t>(H * W));
-        }
-
-        // Timestamp: wall clock at start of first grab
-        auto abs_ts = std::chrono::duration_cast<std::chrono::microseconds>(
-            cube_start.time_since_epoch());   // steady_clock epoch, good enough for relative use
-        // Use system_clock for absolute wall time
-        auto wall_ts = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::system_clock::now().time_since_epoch());
-        output_tensor_.setAbsoluteTimestamp(wall_ts);
-        output_tensor_.setSlot(ctx_.slot);
-
-        output_ff.go(&output_tensor_);
-        return std::chrono::microseconds(0);
-    }
-
-private:
-    BaslerMultispectralContext ctx_;
-    BaslerCamera               camera_;
-
-    Limef::frame::TensorFrame  output_tensor_;
 };
 
 } // namespace Limef::basler

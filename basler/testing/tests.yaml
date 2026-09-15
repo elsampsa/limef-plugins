@@ -39,13 +39,3 @@ groups:
           PYLON_CAMEMU: "1"
         expect_stdout:
           - "decoded frames: 5"
-      4:
-        valgrind: false
-        fixtures: false
-        verbosity: 2
-        timeout: 30
-        about: "BaslerMultispectralThread emulator: grab 2 TensorFrame cubes (3 bands)"
-        env:
-          PYLON_CAMEMU: "1"
-        expect_stdout:
-          - "tensor frames: 2"

@@ -20,8 +20,6 @@
 // Exposes:
 //   BaslerCameraContext       - configuration for BaslerCameraThread
 //   BaslerCameraThread        - colour or mono Basler camera producer
-//   BaslerMultispectralContext - configuration for BaslerMultispectralThread
-//   BaslerMultispectralThread - spectral-cube Basler camera producer
 //
 // Requires 'import limef' to be loaded first so that FrameFilter etc. are
 // registered in pybind11's global type registry.
@@ -162,83 +160,4 @@ PYBIND11_MODULE(limef_basler, m) {
              "    value: value string accepted by the node.\n\n"
              "The GIL is released while the call is in progress because the\n"
              "Pylon SDK may block briefly on the camera bus.");
-
-    // ── BaslerMultispectralContext ─────────────────────────────────────────────
-
-    py::class_<BaslerMultispectralContext>(m, "BaslerMultispectralContext",
-        "Configuration for BaslerMultispectralThread.\n\n"
-        "Attributes:\n"
-        "    serial             Camera serial; empty = first available.\n"
-        "    slot               Stream slot identifier (default: 1).\n"
-        "    width              Requested width;  0 = camera default.\n"
-        "    height             Requested height; 0 = camera default.\n"
-        "    fps                Cube rate — complete spectral cubes per second (default: 1.0).\n"
-        "                       Note: the camera's AcquisitionFrameRate limiter is always disabled\n"
-        "                       (fps=0 passed to open()); cube rate is controlled by filter_settle_ms.\n"
-        "    feature_file       Path to a Pylon .pfs file loaded as a baseline before context\n"
-        "                       overrides are applied; empty = no file (default: '').\n"
-        "    exposure_auto      Set ExposureAuto=Continuous after feature file load (default: False).\n"
-        "    band_filter_values List of integer filter wheel positions, one per band.\n"
-        "    filter_settle_ms   Milliseconds to wait after each filter change (default: 50).\n"
-        "    filter_node        GenICam node name for the filter wheel (default: FilterWheelPosition).")
-        .def(py::init<>())
-        .def_readwrite("serial",             &BaslerMultispectralContext::serial)
-        .def_readwrite("slot",               &BaslerMultispectralContext::slot)
-        .def_readwrite("width",              &BaslerMultispectralContext::width)
-        .def_readwrite("height",             &BaslerMultispectralContext::height)
-        .def_readwrite("fps",                &BaslerMultispectralContext::fps)
-        .def_readwrite("feature_file",       &BaslerMultispectralContext::feature_file)
-        .def_readwrite("exposure_auto",      &BaslerMultispectralContext::exposure_auto)
-        .def_readwrite("band_filter_values", &BaslerMultispectralContext::band_filter_values)
-        .def_readwrite("filter_settle_ms",   &BaslerMultispectralContext::filter_settle_ms)
-        .def_readwrite("filter_node",        &BaslerMultispectralContext::filter_node);
-
-    // ── BaslerMultispectralThread ──────────────────────────────────────────────
-
-    py::class_<BaslerMultispectralThread,
-               std::shared_ptr<BaslerMultispectralThread>>(m, "BaslerMultispectralThread",
-        "Basler camera thread for spectral cube acquisition.\n\n"
-        "Cycles through band_filter_values, grabbing one Mono8 frame per band.\n"
-        "Emits a TensorFrame of shape (N, H, W) once per complete cube.\n\n"
-        "Typical pipeline::\n\n"
-        "    ctx                    = limef_basler.BaslerMultispectralContext()\n"
-        "    ctx.band_filter_values = [0, 1, 2, 3, 4]\n"
-        "    ctx.filter_settle_ms   = 60\n"
-        "    cam                    = limef_basler.BaslerMultispectralThread('ms', ctx)\n"
-        "    dump                   = limef.DumpFrameFilter('dump')\n"
-        "    cam.cc(dump)\n"
-        "    cam.start()")
-        .def(py::init([](const std::string& name,
-                         const BaslerMultispectralContext& ctx) {
-                 return std::make_shared<BaslerMultispectralThread>(name, ctx);
-             }),
-             py::arg("name"), py::arg("ctx"),
-             "Args:\n"
-             "    name: label for logging\n"
-             "    ctx:  BaslerMultispectralContext")
-        .def("cc",
-             [](BaslerMultispectralThread& self, py::object next) -> py::object {
-                 self.getOutput().cc(py::cast<Limef::ff::FrameFilter&>(next));
-                 return next;
-             },
-             py::arg("next"),
-             "Connect output to a FrameFilter; returns the filter (enables chaining).")
-        .def("getOutput",
-             [](BaslerMultispectralThread& self) -> Limef::ff::FrameFilter& {
-                 return self.getOutput();
-             },
-             py::return_value_policy::reference_internal)
-        .def("start",       &BaslerMultispectralThread::start)
-        .def("stop",
-             [](BaslerMultispectralThread& self) {
-                 py::gil_scoped_release release;
-                 self.stop();
-             })
-        .def("requestStop", &BaslerMultispectralThread::requestStop)
-        .def("waitStop",
-             [](BaslerMultispectralThread& self) {
-                 py::gil_scoped_release release;
-                 self.waitStop();
-             })
-        .def("isStarted",   &BaslerMultispectralThread::isStarted);
 }
