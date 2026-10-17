@@ -28,7 +28,7 @@ import signal
 import sys
 import time
 
-import limef
+import limef.core as limef
 import limef_basler
 
 

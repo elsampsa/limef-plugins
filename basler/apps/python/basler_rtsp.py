@@ -27,7 +27,7 @@ import time
 import argparse
 import threading
 
-import limef
+import limef.core as limef
 import limef_basler
 import numpy as np
 

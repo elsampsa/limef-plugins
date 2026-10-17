@@ -20,7 +20,7 @@ import argparse
 import signal
 import time
 
-import limef
+import limef.core as limef
 import limef_opencv
 
 

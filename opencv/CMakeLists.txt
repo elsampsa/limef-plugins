@@ -129,7 +129,7 @@ target_include_directories(LimefOpenCV PRIVATE
 # At runtime this causes an ImportError for vtable symbols (e.g. SignalFrame's
 # vtable) because those weak symbols live in libLimef.so and are not embedded
 # inline.  Python's dlopen uses RTLD_LOCAL by default, so symbols from an
-# already-loaded libLimef.so (imported via 'import limef') are not visible to
+# already-loaded libLimef.so (imported via 'import limef.core') are not visible to
 # the new .so being loaded, and the undefined vtable symbol causes a crash.
 #
 # --no-as-needed forces libLimef into NEEDED regardless of direct references,

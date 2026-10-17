@@ -21,12 +21,12 @@
 //   BaslerCameraContext       - configuration for BaslerCameraThread
 //   BaslerCameraThread        - colour or mono Basler camera producer
 //
-// Requires 'import limef' to be loaded first so that FrameFilter etc. are
+// Requires 'import limef.core' to be loaded first so that FrameFilter etc. are
 // registered in pybind11's global type registry.
 //
 // Typical usage::
 //
-//   import limef
+//   import limef.core as limef
 //   import limef_basler
 //
 //   ctx = limef_basler.BaslerCameraContext()

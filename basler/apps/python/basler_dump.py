@@ -30,7 +30,7 @@ import time
 import os
 import argparse
 
-import limef
+import limef.core as limef
 import limef_basler
 
 

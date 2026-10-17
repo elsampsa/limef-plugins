@@ -20,12 +20,12 @@
 // Exposes:
 //   GPUOpenCVThread  - applies GPU Gaussian blur to TensorFrames via OpenCV CUDA
 //
-// Requires 'import limef' to be loaded first so that FrameFilter, HWAccel, etc.
+// Requires 'import limef.core' to be loaded first so that FrameFilter, HWAccel, etc.
 // are registered in pybind11's global type registry.
 //
 // Typical usage::
 //
-//   import limef
+//   import limef.core as limef
 //   import limef_opencv
 //
 //   cam     = limef.USBCameraThread('cam', ctx)
