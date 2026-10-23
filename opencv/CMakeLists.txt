@@ -84,6 +84,8 @@ endif()
 
 set(OPENCV_INCLUDE_DIR "${OPENCV_INSTALL}/include/opencv4")
 set(OPENCV_LIB_DIR     "${OPENCV_INSTALL}/lib")
+# OpenCV libs are linked by full path: a bare -lopencv_core would resolve to the system OpenCV whenever a
+# -L/usr/lib/<arch> from pkg-config (x11, glew, ..) comes first on the link line (e.g. JetPack's OpenCV 4.8)
 
 if(NOT EXISTS "${OPENCV_INCLUDE_DIR}/opencv2/core.hpp")
     message(FATAL_ERROR
@@ -149,12 +151,11 @@ target_include_directories(LimefOpenCV PRIVATE
 # and it would work.  The header-only design trades away that simplicity.
 target_link_libraries(LimefOpenCV PRIVATE
     "-L${LIMEF_PREFIX}/lib" "-Wl,--no-as-needed" -lLimef "-Wl,--as-needed"
-    "-L${OPENCV_LIB_DIR}"
-    opencv_core
-    opencv_cudaarithm
-    opencv_cudafilters
-    opencv_cudev
-    opencv_imgproc
+    "${OPENCV_LIB_DIR}/libopencv_core.so"
+    "${OPENCV_LIB_DIR}/libopencv_cudaarithm.so"
+    "${OPENCV_LIB_DIR}/libopencv_cudafilters.so"
+    "${OPENCV_LIB_DIR}/libopencv_cudev.so"
+    "${OPENCV_LIB_DIR}/libopencv_imgproc.so"
     CUDA::cudart
 )
 
@@ -227,11 +228,10 @@ if(PYBIND11_CMAKE_DIR)
     target_link_libraries(limef_opencv_py PRIVATE
         "-L${LIMEF_PREFIX}/lib"
         "-Wl,--no-as-needed" LimefOpenCV -lLimef "-Wl,--as-needed"
-        "-L${OPENCV_LIB_DIR}"
-        opencv_core
-        opencv_cudaarithm
-        opencv_cudafilters
-        opencv_cudev
+        "${OPENCV_LIB_DIR}/libopencv_core.so"
+        "${OPENCV_LIB_DIR}/libopencv_cudaarithm.so"
+        "${OPENCV_LIB_DIR}/libopencv_cudafilters.so"
+        "${OPENCV_LIB_DIR}/libopencv_cudev.so"
         CUDA::cudart
     )
     set_target_properties(limef_opencv_py PROPERTIES
@@ -298,11 +298,10 @@ if(build_tests)
     target_link_libraries(opencv_test PRIVATE
         "-L${LIMEF_PREFIX}/lib" -lLimef
         LimefOpenCV
-        "-L${OPENCV_LIB_DIR}"
-        opencv_core
-        opencv_cudaarithm
-        opencv_cudafilters
-        opencv_cudev
+        "${OPENCV_LIB_DIR}/libopencv_core.so"
+        "${OPENCV_LIB_DIR}/libopencv_cudaarithm.so"
+        "${OPENCV_LIB_DIR}/libopencv_cudafilters.so"
+        "${OPENCV_LIB_DIR}/libopencv_cudev.so"
         CUDA::cudart
         pthread
     )
